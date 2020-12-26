@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf8">
+    </meta>
+    <input type="file" id="fileInput">
+    <script src="http://cdn.bootcss.com/echarts/5.0.0/echarts.js"></script>
+    <script src="http://lib.sinaapp.com/js/jquery/1.10.2/jquery-1.10.2.min.js"></script>
+    <script type="text/javascript">
+        var jq = jQuery.noConflict(true);
+    </script>
+    <script type="text/javascript">
+        window.onload = function () {
+            var winHeight = 0;
+            if (window.innerHeight) {
+                winHeight = window.innerHeight;
+            } else if ((document.body) && (document.body.clientHeight)) {
+                winHeight = document.body.clientHeight;
+            }
+            var html = document.getElementsByTagName('html')[0];
+            if (document.body.offsetHeight < winHeight) {
+                html.style.height = winHeight;
+            }
+        };
+        var data;
+        document.getElementById('fileInput').addEventListener('change', function selectedFileChanged() {
+            const reader = new FileReader();
+            reader.onload = function () {
+                data = JSON.parse(reader.result);
+                console.log(data, reader.result)
+                draw(data);
+            }
+            reader.readAsText(this.files[0], "UTF-8");
+        });
+        function draw(data) {
+            var timeRangeText = jq("#timeRange-input").val();
+            var roomRangeText = jq("#roomRange-input").val();
+            var timeRange = eval(timeRangeText);
+            var roomRange = eval(roomRangeText);
+            var graph = data2Graph(data, timeRange, roomRange);
+            drawGraph(graph);
+        }
+
+        function data2Graph(data, timeRange, roomRange) {
+            let colors = ['rgb(255,63,93)', 'rgb(243,158,121)', 'rgb(180,60,153)', 'rgb(140,164,220)', 'rgb(130,208,255)']
+            let graph = {};
+            graph.timeData = [];
+            var vertices = {}
+            let links = [];
+            let nodes = [];
+            let state = false;
+            let currentTimeRange = [Infinity, 0];
+            for (var i = 0; i < data.length; i++) {
+                var sRec = data[i][0];
+                var tRec = data[i][1];
+                let s = String(data[i][0].namedType)
+                let t = String(data[i][1].namedType)
+                var v = Number(data[i][2]);
+                let time = Number(data[i][3])
+                let room = String(data[i][4])
+                if (timeRange && !(time >= timeRange[0] && time <= timeRange[1])) continue;
+                if (currentTimeRange[0] > time) currentTimeRange[0] = time;
+                if (currentTimeRange[1] < time) currentTimeRange[1] = time;
+                if (roomRange && !roomRange.some((value) => { return value === room })) continue;
+                if (!vertices[s]) {
+                    vertices[s] = { name: s, value: -v };
+                } else {
+                    vertices[s]["value"] -= v;
+                }
+                if (!vertices[t]) {
+                    vertices[t] = { name: t, value: v };
+                } else {
+                    vertices[t]["value"] += v;
+                }
+                if (links.map((link) => {
+                    if (link.source === s && link.target === t) {
+                        link.value += v;
+                        state = true;
+                    }
+                    return link;
+                }))
+                    if (state == true) {
+                        state = false;
+                        continue;
+                    }
+                links.push({ 'source': s, 'target': t, 'value': v });
+            }
+            if (currentTimeRange[1] != Infinity) {
+                for (let i = currentTimeRange[0]; i <= currentTimeRange[1]; i++) {
+                    if (i % 100 != 0) continue;
+                    graph.timeData.push(i);
+                }
+            }
+            let maxValue = 0;
+            jq.each(vertices, function (k, v) {
+                if (maxValue < Math.abs(v.value)) maxValue = Math.abs(v.value);
+            });
+            jq.each(vertices, function (k, v) {
+                let maxValueDigit = Math.log10(maxValue)
+                let valueDigit = Math.log10(Math.abs(v.value))
+                let statusNum = Math.log10(maxValue) - Math.log10(Math.abs(v.value))
+                let symbolSize = statusNum < 3 ? Math.round((6 - statusNum) * 50) : 150;
+                let color = "";
+                if (statusNum < 3 && v.value > 0) color = colors[1]
+                if (statusNum < 3 && v.value < 0) color = colors[3]
+                if (statusNum < 1.5 && v.value > 0) color = colors[0]
+                if (statusNum < 1.5 && v.value < 0) color = colors[4]
+                if (statusNum > 3) color = colors[2]
+                nodes.push({
+                    'name': v.name, 'value': v.name + ":" + v.value,
+                    "symbolSize": symbolSize,
+                    'itemStyle': { 'color': color }
+                });
+            });
+            graph['links'] = links;
+            graph['data'] = nodes;
+            graph['maxValue'] = maxValue;
+            for (let time of graph.timeData) {
+                let timeString = String(time)
+                let vertices = {}
+                let links = [];
+                let state = false;
+                let selectedTimeRange = [currentTimeRange[0], time]
+                for (var i = 0; i < data.length; i++) {
+                    let time = Number(data[i][3])
+                    if (selectedTimeRange && !(time >= selectedTimeRange[0] && time <= selectedTimeRange[1])) continue;
+                    var sRec = data[i][0];
+                    var tRec = data[i][1];
+                    let s = String(data[i][0].namedType)
+                    let t = String(data[i][1].namedType)
+                    var v = Number(data[i][2]);
+                    let room = String(data[i][4])
+                    if (roomRange && !roomRange.some((value) => { return value === room })) continue;
+                    if (!vertices[s]) {
+                        vertices[s] = { name: s, value: -v };
+                    } else {
+                        vertices[s]["value"] -= v;
+                    }
+                    if (!vertices[t]) {
+                        vertices[t] = { name: t, value: v };
+                    } else {
+                        vertices[t]["value"] += v;
+                    }
+                    if (links.map((link) => {
+                        if (link.source === s && link.target === t) {
+                            link.value += v;
+                            state = true;
+                        }
+                        return link;
+                    }))
+                        if (state == true) {
+                            state = false;
+                            continue;
+                        }
+                    links.push({ 'source': s, 'target': t, 'value': v });
+                }
+                let nodes = [];
+                let maxValue = 0;
+                jq.each(vertices, function (k, v) {
+                    if (maxValue < Math.abs(v.value)) maxValue = Math.abs(v.value);
+                });
+                jq.each(vertices, function (k, v) {
+                    let maxValueDigit = Math.log10(maxValue)
+                    let valueDigit = Math.log10(Math.abs(v.value))
+                    let statusNum = Math.log10(maxValue) - Math.log10(Math.abs(v.value))
+                    let symbolSize = statusNum < 3 ? Math.round((6 - statusNum) * 50) : 150;
+                    let color = "";
+                    if (statusNum < 3 && v.value > 0) color = colors[1]
+                    if (statusNum < 3 && v.value < 0) color = colors[3]
+                    if (statusNum < 1.5 && v.value > 0) color = colors[0]
+                    if (statusNum < 1.5 && v.value < 0) color = colors[4]
+                    if (statusNum > 3) color = colors[2]
+                    nodes.push({
+                        'name': v.name, 'value': v.name + ":" + v.value,
+                        "symbolSize": symbolSize,
+                        'itemStyle': { 'color': color }
+                    });
+                });
+                graph[timeString] = {};
+                graph[timeString]['links'] = links;
+                graph[timeString]['data'] = nodes;
+                graph[timeString]['maxValue'] = maxValue;
+            }
+            return graph;
+        }
+
+        function drawGraph(graph) {
+            var myChart = echarts.init(document.getElementById("echarts-main"));
+            const myTextStyle = {
+                color: "#333", //文字颜色
+                fontStyle: "normal", //italic斜体  oblique倾斜
+                fontWeight: "normal", //文字粗细bold   bolder   lighter  100 | 200 | 300 | 400...
+                fontFamily: "sans-serif", //字体系列
+                fontSize: 16 //字体大小
+            };
+            const myEdgeLabelTextStyle = {
+                color: "#333", //文字颜色
+                fontStyle: "normal", //italic斜体  oblique倾斜
+                fontWeight: "normal", //文字粗细bold   bolder   lighter  100 | 200 | 300 | 400...
+                fontFamily: "sans-serif", //字体系列
+                fontSize: 13 //字体大小
+            };
+            const myEdgeLabel = {
+                show: true, //是否显示标签。
+                position: 'middle', //标签的位置。// 'start' 线的起始点。'middle' 线的中点。'end' 线的结束点。
+
+                // offset: [-50, -50], //是否对文字进行偏移。默认不偏移。例如：[30, 40] 表示文字在横向上偏移 30，纵向上偏移 40。
+                formatter: "{c}", //标签内容格式器。模板变量有 {a}、{b}、{c}，分别表示系列名，数据名，数据值。
+                textStyle: myEdgeLabelTextStyle
+            };
+            const myLabel = {
+                show: true, //是否显示标签。
+                position: "inside", //标签的位置。// 绝对的像素值[10, 10],// 相对的百分比['50%', '50%'].'top','left','right','bottom','inside','insideLeft','insideRight','insideTop','insideBottom','insideTopLeft','insideBottomLeft','insideTopRight','insideBottomRight'
+                // offset: [50, 50], //是否对文字进行偏移。默认不偏移。例如：[30, 40] 表示文字在横向上偏移 30，纵向上偏移 40。
+                formatter: function (e) {
+                    return e['data']['value'];
+                },
+                textStyle: myTextStyle
+            };
+            var option = {
+                tooltip: {
+                    trigger: 'item',
+                },
+                toolbox: {
+                    show: true,
+                    feature: {
+                        dataZoom: {
+                            yAxisIndex: 'none'
+                        },
+                        dataView: { readOnly: false },
+                        magicType: { type: ['line', 'bar'] },
+                        restore: {},
+                        saveAsImage: {}
+                    }
+                },
+                timeline: {
+                    axisType: 'value',
+                    data: graph.timeData
+                },
+                series: [
+                    {
+                        type: 'graph',
+                        layout: 'force',
+                        draggable: true,
+                        edgeSymbol: ['none', 'arrow'],
+                        symbolSize: 150,
+                        data: graph.data,
+                        links: graph.links,
+                        roam: true,
+                        label: {
+                            normal: myLabel,
+                            emphasis: myLabel
+                        },
+                        edgeLabel: {
+                            // 显示线中间的标签
+                            show: true,
+                            normal: myEdgeLabel,
+                            emphasis: myEdgeLabel
+                        },
+                        force: {
+                            friction: 0.2,
+                            repulsion: 10000,
+                            edgeLength: 700
+                        },
+                        lineStyle: {
+                            normal: {
+                                opacity: 0.9,
+                                width: 2,
+                                curveness: 0.2
+                            }
+                        },
+                    }
+                ],
+                options: []
+            };
+            for (let time of graph.timeData) {
+                let timeString = String(time)
+                option.options.push({
+                    series: [{
+                        type: 'graph',
+                        layout: 'force',
+                        draggable: true,
+                        edgeSymbol: ['none', 'arrow'],
+                        symbolSize: 150,
+                        data: graph[timeString].data,
+                        links: graph[timeString].links,
+                        roam: true,
+                        label: {
+                            normal: myLabel,
+                            emphasis: myLabel
+                        },
+                        edgeLabel: {
+                            // 显示线中间的标签
+                            show: true,
+                            normal: myEdgeLabel,
+                            emphasis: myEdgeLabel
+                        },
+                        force: {
+                            repulsion: 10000,
+                            edgeLength: 700
+                        },
+                        lineStyle: {
+                            normal: {
+                                opacity: 0.9,
+                                width: 2,
+                                curveness: 0.2
+                            }
+                        },
+                    }
+                    ],
+                })
+            }
+            myChart.setOption(option);
+        }
+
+        jq(document).ready(function () {
+            jq("#gen-btn").on("click", function () {
+                echarts.dispose(document.getElementById("echarts-main"))
+                draw(data);
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div id="echarts-main" style="height:1000px;width:100%;"></div>
+    <p>在下方文本框内输入时间范围（[start, stop],如[0,360]），不填则为全部：</p>
+    <textarea id="timeRange-input" style="height:18px;width:500px"></textarea>
+    <p>在下方文本框内输入房间范围数组(如["W2N2","W1N3","W3N2"])，不填则为全部：</p>
+    <textarea id="roomRange-input" style="height:18px;width:500px"></textarea>
+    <p><button id="gen-btn">生成有向图</button></p>
+</body>
+
+</html>
